@@ -41,7 +41,11 @@ SOFTWARE.
 #define FAST_THREAD_LOCAL __thread
 #endif
 
-// define FMTLOG_BLOCK=1 if log statment should be blocked when queue is full, instead of discarding the msg
+#ifndef FMT_NOEXCEPT
+#define FMT_NOEXCEPT
+#endif
+
+// define FMTLOG_BLOCK=1 if log statement should be blocked when queue is full, instead of discarding the msg
 #ifndef FMTLOG_BLOCK
 #define FMTLOG_BLOCK 0
 #endif
