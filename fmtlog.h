@@ -702,8 +702,14 @@ public:
   template<typename... Args>
   inline void logOnce(const char* location, LogLevel level, fmt::format_string<Args...> format,
                       Args&&... args) {
+
+    logOnceV(location, level, format, fmt::make_format_args(std::forward<Args>(args)...));
+  }
+
+  template<typename... Args>
+  inline void logOnceV(const char* location, LogLevel level, const fmt::format_string<Args...>& format, fmt::format_args&& fmt_args)
+  {
     fmt::string_view sv(format);
-    auto&& fmt_args = fmt::make_format_args(args...);
     uint32_t fmt_size = formatted_size(sv, fmt_args);
     uint32_t alloc_size = 8 + 8 + fmt_size;
     bool q_full_cb = true;
@@ -779,11 +785,21 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept {
     fmtlogWrapper<>::impl.log(logId, tsc, __FMTLOG_LOCATION, level, format, ##__VA_ARGS__);        \
   } while (0)
 
-#define FMTLOG_ONCE(level, format, ...)                                                            \
+//
+// Logs a formatted message with the specified source location.
+// 
+// The location string is expected to be a concatenation of the
+// source file and line number, exactly as `__FMTLOG_LOCATION`
+// macro would generate.
+//
+#define FMTLOG_ONCE_LOCATION(level, location, format, ...)                                         \
   do {                                                                                             \
     if (!fmtlog::checkLogLevel(level)) break;                                                      \
-    fmtlogWrapper<>::impl.logOnce(__FMTLOG_LOCATION, level, format, ##__VA_ARGS__);                \
+    fmtlogWrapper<>::impl.logOnce(location, level, format, ##__VA_ARGS__);                         \
   } while (0)
+
+#define FMTLOG_ONCE(level, format, ...)                                                            \
+    FMTLOG_ONCE_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_DBG
 #define logd(format, ...) FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
