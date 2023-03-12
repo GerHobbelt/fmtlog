@@ -27,7 +27,7 @@ SOFTWARE.
   #include "fmtlog-tscns.h"
 #endif
 #include <fmt/format.h>
-
+#include <fmt/printf.h>
 #include <algorithm>
 #include <atomic>
 #include <chrono>
@@ -730,6 +730,14 @@ class fmtlogT
       q_full_cb = false;
     } while (FMTLOG_BLOCK);
   }
+
+  template<typename... Args>
+  inline void logOncePrintf(const char* location, LogLevel level, fmt::format_string<Args...> format,
+                            Args&&... args) {
+    fmt::string_view sv(format);
+    std::string s_msg = fmt::sprintf(sv, args...);
+    logOnce(location, level, "{}", s_msg);
+  }
 };
 
 using fmtlog = fmtlogT<>;
@@ -813,6 +821,16 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
 
 #define FMTLOG_ONCE(level, format, ...)                                                            \
     FMTLOG_ONCE_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
+
+#define FMTLOG_ONCE_PRINTF_LOCATION(level, location, format, ...)                                         \
+  do {                                                                                             \
+    if (!fmtlog::checkLogLevel(level))                                              \
+      break;                                                                        \
+    fmtlogWrapper<>::impl.logOncePrintf(location, level, format, ##__VA_ARGS__);          \
+  } while (0)
+
+#define FMTLOG_ONCE_PRINTF(level, format, ...)                                                            \
+    FMTLOG_ONCE_PRINTF_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_DBG
 #define log_debug(format, ...) FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
