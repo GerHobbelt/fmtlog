@@ -631,7 +631,8 @@ class fmtlogT
         }
         fmt::string_view name(begin, p - begin);
         int id = -1;
-        for (size_t i = 0; i < num_named_args; ++i)
+        if constexpr (num_named_args > 0) 
+		  for (size_t i = 0; i < num_named_args; ++i)
         {
           if (named_args[i].name == name)
           {
