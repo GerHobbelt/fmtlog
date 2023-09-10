@@ -29,6 +29,4 @@ install(TARGETS fmtlog-static)
 
 add_subdirectory(fmt)
 add_subdirectory(test)
-if(NOT MSVC)
-  add_subdirectory(bench)
-endif()
+add_subdirectory(bench)
