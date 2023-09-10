@@ -3,21 +3,24 @@
 #include <atomic>
 
 #include "../fmtlog.h"
+
+#include "monolithic_examples.h"
+
 using namespace std;
 
-const int thr_cnt = 4;
-atomic<int> start_cnt;
+static const int thr_cnt = 4;
+static atomic<int> start_cnt;
 
-size_t msg_cnt = 0;
-size_t cb_size = 0;
+static size_t msg_cnt = 0;
+static size_t cb_size = 0;
 
-void logcb(int64_t ns, fmtlog::LogLevel level, fmt::string_view location, size_t basePos, fmt::string_view threadName,
+static void logcb(int64_t ns, fmtlog::LogLevel level, fmt::string_view location, size_t basePos, fmt::string_view threadName,
            fmt::string_view msg, size_t bodyPos, size_t logFilePos) {
   msg_cnt++;
   cb_size += msg.size();
 }
 
-void threadRun(int id) {
+static void threadRun(int id) {
   fmtlog::setThreadName(fmt::format("thread {}", id).c_str());
   start_cnt++;
   while (start_cnt < thr_cnt)
@@ -28,7 +31,12 @@ void threadRun(int id) {
   }
 }
 
-int main() {
+
+#if defined(BUILD_MONOLITHIC)
+#define main     fmtlog_multithread_test_main
+#endif
+
+int main(void) {
   fmtlog::setLogCB(logcb, fmtlog::INF);
   // fmtlog::closeLogFile();
   fmtlog::setLogFile("multithread.txt");

@@ -1,7 +1,11 @@
-#include "../fmtlog.h"
 #include "fmt/ranges.h"
+#include "../fmtlog.h"
+
 #include <assert.h>
 #include <iostream>
+
+#include "monolithic_examples.h"
+
 using namespace std;
 using namespace fmt::literals;
 
@@ -77,7 +81,13 @@ void test(const S& format, Args&&... args) {
   assert(res == ans);
 }
 
-int main() {
+
+
+#if defined(BUILD_MONOLITHIC)
+#define main     fmtlog_enc_dec_test_main
+#endif
+
+int main(void) {
   char cstring[100] = "cstring cstring";
   const char* p = "haha";
   const char* pcstring = cstring;

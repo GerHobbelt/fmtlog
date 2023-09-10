@@ -3,20 +3,27 @@
 
 #include "../fmtlog.h"
 
-void runBenchmark();
+#include "monolithic_examples.h"
 
-void logcb(int64_t ns, fmtlog::LogLevel level, fmt::string_view location, size_t basePos, fmt::string_view threadName,
+static void runBenchmark();
+
+static void logcb(int64_t ns, fmtlog::LogLevel level, fmt::string_view location, size_t basePos, fmt::string_view threadName,
            fmt::string_view msg, size_t bodyPos, size_t logFilePos) {
   fmt::print("callback full msg: {}, logFilePos: {}\n", msg, logFilePos);
   msg.remove_prefix(bodyPos);
   fmt::print("callback msg body: {}\n", msg);
 }
 
-void logQFullCB(void* userData) {
+static void logQFullCB(void* userData) {
   fmt::print("log q full\n");
 }
 
-int main() {
+
+#if defined(BUILD_MONOLITHIC)
+#define main     fmtlog_log_test_main
+#endif
+
+int main(void) {
   char randomString[] = "Hello World";
   logi("A string, pointer, number, and float: '{}', {}, {}, {}", randomString, (void*)&randomString,
        512, 3.14159);
@@ -85,7 +92,7 @@ int main() {
   return 0;
 }
 
-void runBenchmark() {
+static void runBenchmark() {
   const int RECORDS = 10000;
   // fmtlog::setLogFile("/dev/null", false);
   fmtlog::closeLogFile();
