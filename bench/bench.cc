@@ -1,11 +1,15 @@
-#include <bits/stdc++.h>
+//#include <bits/stdc++.h>
 #include <chrono>
 
 #include "../fmtlog.h"
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/async.h"
+#ifndef DO_NOT_INCLUDE_NANOLOG
 #include "NanoLog/runtime/NanoLogCpp17.h"
+#endif
+
+#include "monolithic_examples.h"
 
 namespace GeneratedFunctions {
 size_t numLogIds;
@@ -51,6 +55,8 @@ struct ComplexFormat : public FmtLogBase
   }
 };
 
+#ifndef DO_NOT_INCLUDE_NANOLOG
+
 struct NanoLogBase
 {
   void flush() { NanoLog::sync(); }
@@ -93,6 +99,8 @@ struct NanoLogComplexFormat : public NanoLogBase
              50000, 97, 50, 0, 26.2);
   }
 };
+
+#endif // DO_NOT_INCLUDE_NANOLOG
 
 struct SpdlogBase
 {
@@ -173,13 +181,20 @@ void bench(T o) {
              typeid(o).name(), (span1 / RECORDS) * 1e9, RECORDS / span2 / 1e6);
 }
 
-int main() {
+
+#if defined(BUILD_MONOLITHIC)
+#define main     fmtlog_bench_main
+#endif
+
+int main(void) {
   fmtlog::setLogFile("fmtlog.txt", true);
   fmtlog::setHeaderPattern("[{YmdHMSe}] [fmtlog] [{l}] [{s}] ");
   fmtlog::preallocate();
 
+#ifndef DO_NOT_INCLUDE_NANOLOG
   NanoLog::setLogFile("nanalog.bin");
   NanoLog::preallocate();
+#endif
 
   auto spdlogger = spdlog::basic_logger_st("spdlog", "spdlog.txt", true);
 
@@ -192,6 +207,8 @@ int main() {
 
   fmt::print("\n");
 
+#ifndef DO_NOT_INCLUDE_NANOLOG
+
   bench(NanoLogStaticString());
   bench(NanoLogStringConcat());
   bench(NanoLogSingleInteger());
@@ -200,6 +217,8 @@ int main() {
   bench(NanoLogComplexFormat());
 
   fmt::print("\n");
+
+#endif
 
   bench(SpdlogStaticString(spdlogger.get()));
   bench(SpdlogStringConcat(spdlogger.get()));
