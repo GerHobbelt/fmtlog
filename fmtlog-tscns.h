@@ -27,6 +27,10 @@ SOFTWARE.
 #include <cstdint>
 #include <thread>
 
+#ifdef _MSC_VER
+#include <intrin.h>
+#endif
+
 namespace fmtlogdetail {
   // https://github.com/MengRao/tscns
   class TSCNS
@@ -34,8 +38,10 @@ namespace fmtlogdetail {
   public:
     static const int64_t NsPerSec = 1000000000;
 
-    void init(int64_t init_calibrate_ns = 20000000, int64_t calibrate_interval_ns = 3 * NsPerSec) {
-      calibate_interval_ns_ = calibrate_interval_ns;
+    void init(int64_t init_calibrate_ns = 20000000, int64_t calibrate_interval_ns = 3 * NsPerSec,
+              int64_t max_calcucated_err = 60 * NsPerSec) {
+      calibrate_interval_ns_ = calibrate_interval_ns;
+      max_calcucated_err_ = max_calcucated_err;
       int64_t base_tsc, base_ns;
       syncTime(base_tsc, base_ns);
       int64_t expire_ns = base_ns + init_calibrate_ns;
@@ -46,17 +52,22 @@ namespace fmtlogdetail {
       saveParam(base_tsc, base_ns, base_ns, init_ns_per_tsc);
     }
 
-    void calibrate() {
-      if (rdtsc() < next_calibrate_tsc_) return;
+    bool calibrate() {
+      if (rdtsc() < next_calibrate_tsc_) return false;
       int64_t tsc, ns;
       syncTime(tsc, ns);
       int64_t calulated_ns = tsc2ns(tsc);
       int64_t ns_err = calulated_ns - ns;
+      if (ns_err > max_calcucated_err_) {
+        init();
+        return true;
+      }
       int64_t expected_err_at_next_calibration =
-        ns_err + (ns_err - base_ns_err_) * calibate_interval_ns_ / (ns - base_ns_ + base_ns_err_);
+        ns_err + (ns_err - base_ns_err_) * calibrate_interval_ns_ / (ns - base_ns_ + base_ns_err_);
       double new_ns_per_tsc =
-        ns_per_tsc_ * (1.0 - (double)expected_err_at_next_calibration / calibate_interval_ns_);
+        ns_per_tsc_ * (1.0 - (double)expected_err_at_next_calibration / calibrate_interval_ns_);
       saveParam(tsc, calulated_ns, ns, new_ns_per_tsc);
+      return false;
     }
 
     static inline int64_t rdtsc() {
@@ -130,7 +141,7 @@ namespace fmtlogdetail {
 
     void saveParam(int64_t base_tsc, int64_t base_ns, int64_t sys_ns, double new_ns_per_tsc) {
       base_ns_err_ = base_ns - sys_ns;
-      next_calibrate_tsc_ = base_tsc + (int64_t)((calibate_interval_ns_ - 1000) / new_ns_per_tsc);
+      next_calibrate_tsc_ = base_tsc + (int64_t)((calibrate_interval_ns_ - 1000) / new_ns_per_tsc);
       uint32_t seq = param_seq_.load(std::memory_order_relaxed);
       param_seq_.store(++seq, std::memory_order_release);
       std::atomic_signal_fence(std::memory_order_acq_rel);
@@ -145,7 +156,8 @@ namespace fmtlogdetail {
     double ns_per_tsc_;
     int64_t base_tsc_;
     int64_t base_ns_;
-    int64_t calibate_interval_ns_;
+    int64_t calibrate_interval_ns_;
+    int64_t max_calcucated_err_;
     int64_t base_ns_err_;
     int64_t next_calibrate_tsc_;
   };

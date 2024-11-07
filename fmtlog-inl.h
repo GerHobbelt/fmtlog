@@ -337,7 +337,7 @@ public:
       while (threadRunning) {
         int64_t before = fmtlogWrapper<>::impl.tscns.rdns();
         poll(false);
-        int64_t delay = fmtlogWrapper<>::impl.tscns.rdns() - before;
+        uint64_t delay = fmtlogWrapper<>::impl.tscns.rdns() - before;
         if (delay < pollInterval) {
           std::this_thread::sleep_for(std::chrono::nanoseconds(pollInterval - delay));
         }
@@ -420,7 +420,9 @@ public:
   }
 
   void poll(bool forceFlush) {
-    fmtlogWrapper<>::impl.tscns.calibrate();
+    if (fmtlogWrapper<>::impl.tscns.calibrate()) {
+      resetDate();
+    }
     int64_t tsc = fmtlogWrapper<>::impl.tscns.rdtsc();
     if (logInfos.size()) {
       std::unique_lock<std::mutex> lock(logInfoMutex);
