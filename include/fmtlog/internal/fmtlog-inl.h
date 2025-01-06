@@ -29,17 +29,19 @@ SOFTWARE.
 #include <mutex>
 #include <thread>
 
-#include "fmtlog.h"
+#include "fmtlog/fmtlog.h"
 
 #ifdef _WIN32
 #ifndef NOMINMAX
 #define NOMINMAX
 #endif
-#include <processthreadsapi.h>
 #include <windows.h>
+
+#include <processthreadsapi.h>
 #else
-#include <sys/syscall.h>
 #include <unistd.h>
+
+#include <sys/syscall.h>
 #endif
 
 namespace

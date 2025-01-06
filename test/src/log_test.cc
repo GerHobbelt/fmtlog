@@ -7,8 +7,16 @@
 
 static void runBenchmark();
 
-static void logcb(int64_t ns, fmtlog::LogLevel level, fmt::string_view location, size_t basePos, fmt::string_view threadName,
-           fmt::string_view msg, size_t bodyPos, size_t logFilePos) {
+static void logcb(
+    int64_t ns,
+    fmtlog::LogLevel level,
+    fmt::string_view location,
+    size_t basePos,
+    fmt::string_view threadName,
+    fmt::string_view msg,
+    size_t bodyPos,
+    size_t logFilePos)
+{
   fmt::print("callback full msg: {}, logFilePos: {}\n", msg, logFilePos);
   msg.remove_prefix(bodyPos);
   fmt::print("callback msg body: {}\n", msg);
@@ -25,8 +33,7 @@ static void logQFullCB(void* userData) {
 
 int main(void) {
   char randomString[] = "Hello World";
-  logi("A string, pointer, number, and float: '{}', {}, {}, {}", randomString, (void*)&randomString,
-       512, 3.14159);
+  logi("A string, pointer, number, and float: '{}', {}, {}, {}", randomString, (void*)&randomString, 512, 3.14159);
 
   int a = 4;
   auto sptr = std::make_shared<int>(5);
@@ -45,14 +52,16 @@ int main(void) {
   // logi(FMT_STRING("This msg will trigger compile error: {:d}"), "I am not a number");
   // FMT_STRING() above is not needed for c++20
 
-  logd("This message wont be logged since it is lower "
-       "than the current log level.");
+  logd(
+      "This message wont be logged since it is lower "
+      "than the current log level.");
   fmtlog::setLogLevel(fmtlog::DBG);
   logd("Now debug msg is shown");
 
   fmtlog::poll();
 
-  for (int i = 0; i < 3; i++) {
+  for (int i = 0; i < 3; i++)
+  {
     logio("log once: {}", i);
   }
 
@@ -66,7 +75,8 @@ int main(void) {
 
   fmtlog::poll();
 
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 10; i++)
+  {
     logil(10, "This msg will be logged at an interval of at least 10 ns: {}.", i);
   }
 
@@ -76,12 +86,14 @@ int main(void) {
   logw("This msg will be called back");
 
   fmtlog::setLogFile("/tmp/wow", false);
-  for (int i = 0; i < 10; i++) {
+  for (int i = 0; i < 10; i++)
+  {
     logw("test logfilepos: {}.", i);
   }
 
   fmtlog::setLogQFullCB(logQFullCB, nullptr);
-  for (int i = 0; i < 1024; i++) {
+  for (int i = 0; i < 1024; i++)
+  {
     std::string str(1000, ' ');
     logi("log q full cb test: {}", str);
   }
@@ -101,7 +113,8 @@ static void runBenchmark() {
   std::chrono::high_resolution_clock::time_point t0, t1;
 
   t0 = std::chrono::high_resolution_clock::now();
-  for (int i = 0; i < RECORDS; ++i) {
+  for (int i = 0; i < RECORDS; ++i)
+  {
     logi("Simple log message with one parameters, {}", i);
   }
   t1 = std::chrono::high_resolution_clock::now();

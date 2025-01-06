@@ -33,8 +33,8 @@ SOFTWARE.
 #include <chrono>
 #include <memory>
 #include <thread>
-#include <type_traits>
 #include <vector>
+#include <type_traits>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -848,4 +848,4 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
 #define logel(min_interval, format, ...) (void)0
 #endif
 
-#include "fmtlog-inl.h"
+#include "fmtlog/internal/fmtlog-inl.h"
