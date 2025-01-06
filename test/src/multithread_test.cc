@@ -2,7 +2,7 @@
 #include <thread>
 #include <atomic>
 
-#include "../fmtlog.h"
+#include "fmtlog/fmtlog.h"
 
 #include "monolithic_examples.h"
 

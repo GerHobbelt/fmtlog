@@ -1,7 +1,7 @@
 #include <chrono>
 #include <iostream>
 
-#include "../fmtlog.h"
+#include "fmtlog/fmtlog.h"
 
 #include "monolithic_examples.h"
 
