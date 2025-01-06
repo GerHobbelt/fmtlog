@@ -27,6 +27,7 @@ SOFTWARE.
   #include "fmtlog-tscns.h"
 #endif
 #include <fmt/format.h>
+#include <algorithm>
 #include <type_traits>
 #include <vector>
 #include <chrono>
@@ -265,7 +266,7 @@ public:
                                     int& argIdx, std::vector<fmt::basic_format_arg<Context>>& args);
 
   static void registerLogInfo(uint32_t& logId, FormatToFn fn, const char* location, LogLevel level,
-                              fmt::string_view fmtString) noexcept;
+                              std::string fmtString) noexcept;
 
   static void vformat_to(MemoryBuffer& out, fmt::string_view fmt, fmt::format_args args);
 
@@ -496,7 +497,7 @@ public:
   }
 
   template<bool Reorder, typename... Args>
-  static fmt::string_view unNameFormat(fmt::string_view in, uint32_t* reorderIdx,
+  static std::string unNameFormat(std::string in, uint32_t* reorderIdx,
                                        const Args&... args) {
     constexpr size_t num_named_args = fmt::detail::count<isNamedArg<Args>()...>();
     if constexpr (num_named_args == 0) {
@@ -504,7 +505,8 @@ public:
     }
     const char* begin = in.data();
     const char* p = begin;
-    std::unique_ptr<char[]> unnamed_str(new char[in.size() + 1 + num_named_args * 5]);
+    std::size_t size_unnamed_str = in.size() + 1 + num_named_args * 5;
+    auto unnamed_str = std::make_unique<char[]>(size_unnamed_str);
     fmt::detail::named_arg_info<char> named_args[std::max(num_named_args, (size_t)1)];
     storeNamedArgs<0, 0>(named_args, args...);
 
@@ -550,8 +552,11 @@ public:
       }
       begin = p;
     }
-    const char* ptr = unnamed_str.release();
-    return fmt::string_view(ptr, out - ptr);
+    std::string result;
+    result.reserve(size_unnamed_str);
+    std::string_view ptr_span(unnamed_str.get(),size_unnamed_str);
+    std::copy_n(ptr_span.begin(),out - unnamed_str.get(),std::back_inserter(result));
+    return result;
   }
 
 public:
@@ -561,7 +566,8 @@ public:
     fmt::format_string<typename fmtlogdetail::UnrefPtr<fmt::remove_cvref_t<Args>>::type...> format,
     Args&&... args) noexcept {
     if (!logId) {
-      auto unnamed_format = unNameFormat<false>(fmt::string_view(format), nullptr, args...);
+      fmt::string_view format_str_v = format.get();
+      auto unnamed_format = unNameFormat<false>(std::string{format_str_v.begin(),format_str_v.end()}, nullptr, args...);
       registerLogInfo(logId, formatTo<Args...>, location, level, unnamed_format);
     }
     constexpr size_t num_cstring = fmt::detail::count<isCstring<Args>()...>();
