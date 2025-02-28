@@ -57,9 +57,10 @@ SOFTWARE.
 
 #define FMTLOG_LEVEL_DBG 0
 #define FMTLOG_LEVEL_INF 1
-#define FMTLOG_LEVEL_WRN 2
-#define FMTLOG_LEVEL_ERR 3
-#define FMTLOG_LEVEL_OFF 4
+#define FMTLOG_LEVEL_STRATEGY 2
+#define FMTLOG_LEVEL_WRN 3
+#define FMTLOG_LEVEL_ERR 4
+#define FMTLOG_LEVEL_OFF 5
 
 // define FMTLOG_ACTIVE_LEVEL to turn off low log level in compile time
 #ifndef FMTLOG_ACTIVE_LEVEL
@@ -118,6 +119,7 @@ class fmtlogT
   {
     DBG = 0,
     INF,
+    STRATEGY,
     WRN,
     ERR,
     OFF
@@ -145,6 +147,8 @@ class fmtlogT
   // If current msg has level >= flushLogLevel, flush will be triggered
   static void flushOn(LogLevel flushLogLevel) noexcept;
 
+  static void forceFlushLogFile() noexcept;
+  
   // If file buffer has more than specified bytes, flush will be triggered
   static void setFlushBufSize(uint32_t bytes) noexcept;
 
@@ -196,6 +200,8 @@ class fmtlogT
   // Note that user must not call poll() himself when the thread is running
   static void startPollingThread(int64_t pollInterval = 1000000000) noexcept;
 
+  static void handleLoggerEnding() noexcept;
+  
   // Stop the polling thread
   static void stopPollingThread() noexcept;
 
@@ -809,43 +815,53 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
     FMTLOG_ONCE_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_DBG
-#define logd(format, ...)                FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
-#define logdo(format, ...)               FMTLOG_ONCE(fmtlog::DBG, format, ##__VA_ARGS__)
-#define logdl(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::DBG, format, ##__VA_ARGS__)
+#define log_debug(format, ...) FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
+#define log_debug_once(format, ...) FMTLOG_ONCE(fmtlog::DBG, format, ##__VA_ARGS__)
+#define log_debug_limit(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::DBG, format, ##__VA_ARGS__)
 #else
-#define logd(format, ...)                (void)0
-#define logdo(format, ...)               (void)0
-#define logdl(min_interval, format, ...) (void)0
+#define log_debug(format, ...) (void)0
+#define log_debug_once(format, ...) (void)0
+#define log_debug_limit(min_interval, format, ...) (void)0
 #endif
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_INF
-#define logi(format, ...)                FMTLOG(fmtlog::INF, format, ##__VA_ARGS__)
-#define logio(format, ...)               FMTLOG_ONCE(fmtlog::INF, format, ##__VA_ARGS__)
-#define logil(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::INF, format, ##__VA_ARGS__)
+#define log_info(format, ...) FMTLOG(fmtlog::INF, format, ##__VA_ARGS__)
+#define log_info_once(format, ...) FMTLOG_ONCE(fmtlog::INF, format, ##__VA_ARGS__)
+#define log_info_limit(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::INF, format, ##__VA_ARGS__)
 #else
-#define logi(format, ...)                (void)0
-#define logio(format, ...)               (void)0
-#define logil(min_interval, format, ...) (void)0
+#define log_info(format, ...) (void)0
+#define log_info_once(format, ...) (void)0
+#define log_info_limit(min_interval, format, ...) (void)0
+#endif
+
+#if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_STRATEGY
+#define log_strategy(format, ...) FMTLOG(fmtlog::STRATEGY, format, ##__VA_ARGS__)
+#define log_strategy_once(format, ...) FMTLOG_ONCE(fmtlog::STRATEGY, format, ##__VA_ARGS__)
+#define log_strategy_limit(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::STRATEGY, format, ##__VA_ARGS__)
+#else
+#define log_strategy(format, ...) (void)0
+#define log_strategy_once(format, ...) (void)0
+#define log_strategy_limit(min_interval, format, ...) (void)0
 #endif
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_WRN
-#define logw(format, ...)                FMTLOG(fmtlog::WRN, format, ##__VA_ARGS__)
-#define logwo(format, ...)               FMTLOG_ONCE(fmtlog::WRN, format, ##__VA_ARGS__)
-#define logwl(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::WRN, format, ##__VA_ARGS__)
+#define log_warning(format, ...) FMTLOG(fmtlog::WRN, format, ##__VA_ARGS__)
+#define log_warning_once(format, ...) FMTLOG_ONCE(fmtlog::WRN, format, ##__VA_ARGS__)
+#define log_warning_limit(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::WRN, format, ##__VA_ARGS__)
 #else
-#define logw(format, ...)                (void)0
-#define logwo(format, ...)               (void)0
-#define logwl(min_interval, format, ...) (void)0
+#define log_warning(format, ...) (void)0
+#define log_warning_once(format, ...) (void)0
+#define log_warning_limit(min_interval, format, ...) (void)0
 #endif
 
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_ERR
-#define loge(format, ...)                FMTLOG(fmtlog::ERR, format, ##__VA_ARGS__)
-#define logeo(format, ...)               FMTLOG_ONCE(fmtlog::ERR, format, ##__VA_ARGS__)
-#define logel(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::ERR, format, ##__VA_ARGS__)
+#define log_error(format, ...) FMTLOG(fmtlog::ERR, format, ##__VA_ARGS__)
+#define log_error_once(format, ...) FMTLOG_ONCE(fmtlog::ERR, format, ##__VA_ARGS__)
+#define log_error_limit(min_interval, format, ...) FMTLOG_LIMIT(min_interval, fmtlog::ERR, format, ##__VA_ARGS__)
 #else
-#define loge(format, ...)                (void)0
-#define logeo(format, ...)               (void)0
-#define logel(min_interval, format, ...) (void)0
+#define log_error(format, ...) (void)0
+#define log_error_once(format, ...) (void)0
+#define log_error_limit(min_interval, format, ...) (void)0
 #endif
 
 #include "fmtlog/internal/fmtlog-inl.h"

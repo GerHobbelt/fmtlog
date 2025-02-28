@@ -19,7 +19,7 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
 AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+SOFTWARE
 */
 
 #pragma once
@@ -28,6 +28,7 @@ SOFTWARE.
 #include <limits>
 #include <mutex>
 #include <thread>
+#include <iostream>
 
 #include "fmtlog/fmtlog.h"
 
@@ -398,6 +399,13 @@ class fmtlogDetailT
     nextFlushTime = (std::numeric_limits<int64_t>::max)();
   }
 
+  void forceFlushLogFile() {
+    // fwrite(membuf.data(), 1, membuf.size(), outputFp);
+    // if (!manageFp) fflush(outputFp);
+    // else
+    //   fpos += membuf.size();
+  }
+  
   void closeLogFile()
   {
     if (membuf.size())
@@ -438,6 +446,11 @@ class fmtlogDetailT
       thr.join();
   }
 
+  void handleLoggerEnding() {
+    stopPollingThread();
+    closeLogFile();
+  }
+
   void handleLog(fmt::string_view threadName, const fmtlog::SPSCVarQueueOPT::MsgHeader* header)
   {
     setArgVal<6>(threadName);
@@ -470,8 +483,7 @@ class fmtlogDetailT
     hour.fromi(h);
     setArgVal<14>(info.getBase());
     setArgVal<15>(info.getLocation());
-    logLevel = (const char*)"DBG INF WRN ERR OFF" + (info.logLevel << 2);
-
+    logLevel = (const char*)"DBG INF STR WRN ERR OFF" + (info.logLevel << 2);
     size_t headerPos = membuf.size();
     fmtlog::vformat_to(membuf, headerPattern, fmt::basic_format_args(args.data(), parttenArgSize));
     size_t bodyPos = membuf.size();
@@ -541,6 +553,7 @@ class fmtlogDetailT
     }
     if (threadBuffers.size())
     {
+      std::cout << "captured mutex\n";
       std::unique_lock<std::mutex> lock(bufferMutex);
       for (auto tb : threadBuffers)
       {
@@ -776,9 +789,20 @@ void fmtlogT<_>::startPollingThread(int64_t pollInterval) noexcept
 }
 
 template<int _>
+void fmtlogT<_>::handleLoggerEnding() noexcept {
+    fmtlogDetailWrapper<>::impl.handleLoggerEnding();
+}
+
+
+template<int _>
 void fmtlogT<_>::stopPollingThread() noexcept
 {
   fmtlogDetailWrapper<>::impl.stopPollingThread();
+}
+
+template<int _>
+void fmtlogT<_>::forceFlushLogFile() noexcept {
+  fmtlogDetailWrapper<>::impl.forceFlushLogFile();
 }
 
 template class fmtlogT<0>;
