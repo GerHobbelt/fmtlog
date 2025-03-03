@@ -30,6 +30,7 @@ SOFTWARE.
 #include <atomic>
 #include <thread>
 #include <memory>
+#include <tscns.hpp>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -62,10 +63,17 @@ SOFTWARE.
 #endif
 
 namespace fmtlogdetail {
+
+// These meta-functions are for the optimization
+// which avoids copying and allows passing pointer to object
+// And UnrefPtr will extract the object type
 template<typename Arg>
 struct UnrefPtr : std::false_type
 { using type = Arg; };
 
+// If the pointer is char * or void *
+// We don't view them as passing pointer to object
+// Therefore return false
 template<>
 struct UnrefPtr<char*> : std::false_type
 { using type = char*; };
@@ -74,6 +82,7 @@ template<>
 struct UnrefPtr<void*> : std::false_type
 { using type = void*; };
 
+// In these cases, extract the object type
 template<typename Arg>
 struct UnrefPtr<std::shared_ptr<Arg>> : std::true_type
 { using type = Arg; };
@@ -88,6 +97,20 @@ struct UnrefPtr<Arg*> : std::true_type
 
 }; // namespace fmtlogdetail
 
+/** 
+* @brief Multi-threading async logging class.
+
+  In real world, we care about the latency in working threads, and we don't want logging to lag the
+  working thread. Therefore the solution here is, we start a logging thread for disk writing. And we 
+  create a SPSCQueue to pass the logging messages for each thread.
+  (SPSC ensures no producer contention, avoiding blocking the working threads)
+  And the logging thread will poll these Queues periodically, taking out the logging messages, re-structure them
+  and write them to disk.
+  Moreover, it can be noticed that the format string of a logging statement can be determined during compile-time.
+  And we just need to push the value of the variables into the queue at runtime. Without dealing with too much at compile
+  time, here we choose to send the format string information(i.e. the metadata) at initialization time 
+  (the first time this logging statement is encountered).
+*/
 template<int __ = 0>
 class fmtlogT
 {
@@ -237,133 +260,16 @@ public:
     alignas(128) uint32_t read_idx = 0;
   };
 
+  // A thread buffer contains a SPSC Queue for passing logging messages,
+  // a varable indicating this buffer should be deallocated 
+  // (set by the destructor of ThreadBufferDestroyer),
+  // and the name of the thread (set by setThreadName, or using the thread id as default).
   struct ThreadBuffer
   {
     SPSCVarQueueOPT varq;
     bool shouldDeallocate = false;
     char name[32];
     size_t nameSize;
-  };
-
-  // https://github.com/MengRao/tscns
-  class TSCNS
-  {
-  public:
-    static const int64_t NsPerSec = 1000000000;
-
-    void init(int64_t init_calibrate_ns = 20000000, int64_t calibrate_interval_ns = 3 * NsPerSec) {
-      calibate_interval_ns_ = calibrate_interval_ns;
-      int64_t base_tsc, base_ns;
-      syncTime(base_tsc, base_ns);
-      int64_t expire_ns = base_ns + init_calibrate_ns;
-      while (rdsysns() < expire_ns) std::this_thread::yield();
-      int64_t delayed_tsc, delayed_ns;
-      syncTime(delayed_tsc, delayed_ns);
-      double init_ns_per_tsc = (double)(delayed_ns - base_ns) / (delayed_tsc - base_tsc);
-      saveParam(base_tsc, base_ns, 0, init_ns_per_tsc);
-    }
-
-    void calibrate() {
-      if (rdtsc() < next_calibrate_tsc_) return;
-      int64_t tsc, ns;
-      syncTime(tsc, ns);
-      int64_t ns_err = tsc2ns(tsc) - ns;
-      if (ns_err > 1000000) ns_err = 1000000;
-      if (ns_err < -1000000) ns_err = -1000000;
-      double new_ns_per_tsc =
-        ns_per_tsc_ * (1.0 - (ns_err + ns_err - base_ns_err_) / ((tsc - base_tsc_) * ns_per_tsc_));
-      saveParam(tsc, ns, ns_err, new_ns_per_tsc);
-    }
-
-    static inline int64_t rdtsc() {
-#ifdef _MSC_VER
-      return __rdtsc();
-#elif defined(__i386__) || defined(__x86_64__) || defined(__amd64__)
-      return __builtin_ia32_rdtsc();
-#else
-      return rdsysns();
-#endif
-    }
-
-    inline int64_t tsc2ns(int64_t tsc) const {
-      while (true) {
-        uint32_t before_seq = param_seq_.load(std::memory_order_acquire) & ~1;
-        std::atomic_signal_fence(std::memory_order_acq_rel);
-        int64_t ns = base_ns_ + (int64_t)((tsc - base_tsc_) * ns_per_tsc_);
-        std::atomic_signal_fence(std::memory_order_acq_rel);
-        uint32_t after_seq = param_seq_.load(std::memory_order_acquire);
-        if (before_seq == after_seq) return ns;
-      }
-    }
-
-    inline int64_t rdns() const { return tsc2ns(rdtsc()); }
-
-    static inline int64_t rdsysns() {
-      using namespace std::chrono;
-      return duration_cast<nanoseconds>(system_clock::now().time_since_epoch()).count();
-    }
-
-    double getTscGhz() const { return 1.0 / ns_per_tsc_; }
-
-    // Linux kernel sync time by finding the first trial with tsc diff < 50000
-    // We try several times and return the one with the mininum tsc diff.
-    // Note that MSVC has a 100ns resolution clock, so we need to combine those ns with the same
-    // value, and drop the first and the last value as they may not scan a full 100ns range
-    static void syncTime(int64_t& tsc_out, int64_t& ns_out) {
-#ifdef _MSC_VER
-      const int N = 15;
-#else
-      const int N = 3;
-#endif
-      int64_t tsc[N + 1];
-      int64_t ns[N + 1];
-
-      tsc[0] = rdtsc();
-      for (int i = 1; i <= N; i++) {
-        ns[i] = rdsysns();
-        tsc[i] = rdtsc();
-      }
-
-#ifdef _MSC_VER
-      int j = 1;
-      for (int i = 2; i <= N; i++) {
-        if (ns[i] == ns[i - 1]) continue;
-        tsc[j - 1] = tsc[i - 1];
-        ns[j++] = ns[i];
-      }
-      j--;
-#else
-      int j = N + 1;
-#endif
-
-      int best = 1;
-      for (int i = 2; i < j; i++) {
-        if (tsc[i] - tsc[i - 1] < tsc[best] - tsc[best - 1]) best = i;
-      }
-      tsc_out = (tsc[best] + tsc[best - 1]) >> 1;
-      ns_out = ns[best];
-    }
-
-    void saveParam(int64_t base_tsc, int64_t sys_ns, int64_t base_ns_err, double new_ns_per_tsc) {
-      base_ns_err_ = base_ns_err;
-      next_calibrate_tsc_ = base_tsc + (int64_t)((calibate_interval_ns_ - 1000) / new_ns_per_tsc);
-      uint32_t seq = param_seq_.load(std::memory_order_relaxed);
-      param_seq_.store(++seq, std::memory_order_release);
-      std::atomic_signal_fence(std::memory_order_acq_rel);
-      base_tsc_ = base_tsc;
-      base_ns_ = sys_ns + base_ns_err;
-      ns_per_tsc_ = new_ns_per_tsc;
-      std::atomic_signal_fence(std::memory_order_acq_rel);
-      param_seq_.store(++seq, std::memory_order_release);
-    }
-
-    alignas(64) std::atomic<uint32_t> param_seq_ = 0;
-    double ns_per_tsc_;
-    int64_t base_tsc_;
-    int64_t base_ns_;
-    int64_t calibate_interval_ns_;
-    int64_t base_ns_err_;
-    int64_t next_calibrate_tsc_;
   };
 
   void init() {
@@ -387,9 +293,13 @@ public:
 
   static typename SPSCVarQueueOPT::MsgHeader* allocMsg(uint32_t size, bool logQFullCB) noexcept;
 
-  TSCNS tscns;
+  TSCNS<> tscns;
 
   volatile LogLevel currentLogLevel;
+
+  // This threafBuffer is a static thread local variable. 
+  // And the ThreadBuffer object will only be allocated by "preallocate"
+  // fucntion, or by the first logging message in that thread
   static FAST_THREAD_LOCAL ThreadBuffer* threadBuffer;
 
   template<typename Arg>
@@ -431,27 +341,37 @@ public:
     return !std::is_trivially_destructible<ArgType>::value;
   }
 
+  // Recursively compute the size of the arguments
   template<size_t CstringIdx>
   static inline constexpr size_t getArgSizes(size_t* cstringSize) {
     return 0;
   }
 
+  // Initially CstringIdx is 0. And it will increment each time we 
+  // encounter a Cstring. This template parameter will be used to index the
+  // cstringSize array. (Actually it's the same to write it as a constexpr 
+  // function parameter)
   template<size_t CstringIdx, typename Arg, typename... Args>
   static inline constexpr size_t getArgSizes(size_t* cstringSize, const Arg& arg,
                                              const Args&... args) {
     if constexpr (isNamedArg<Arg>()) {
+      // For named arguments, recursively dealting with arg.value
       return getArgSizes<CstringIdx>(cstringSize, arg.value, args...);
     }
     else if constexpr (isCstring<Arg>()) {
+      // C string
       size_t len = strlen(arg) + 1;
       cstringSize[CstringIdx] = len;
+      // We should store the length of the c-strings because strlen is expensive
       return len + getArgSizes<CstringIdx + 1>(cstringSize, args...);
     }
     else if constexpr (isString<Arg>()) {
+      // C++ string
       size_t len = arg.size() + 1;
       return len + getArgSizes<CstringIdx>(cstringSize, args...);
     }
     else {
+      // normal types. count the size
       return sizeof(Arg) + getArgSizes<CstringIdx>(cstringSize, args...);
     }
   }
@@ -461,18 +381,23 @@ public:
     return out;
   }
 
+  // encode the arguments recursively
   template<size_t CstringIdx, typename Arg, typename... Args>
   static inline constexpr char* encodeArgs(size_t* cstringSize, char* out, Arg&& arg,
                                            Args&&... args) {
     if constexpr (isNamedArg<Arg>()) {
+      // For named arguments, recursively dealing with arg.value
       return encodeArgs<CstringIdx>(cstringSize, out, arg.value, std::forward<Args>(args)...);
     }
     else if constexpr (isCstring<Arg>()) {
+      // For C string, memcpy the string to the buffer
+      // We use cstringSize array here (avoiding re-computing strlen)
       memcpy(out, arg, cstringSize[CstringIdx]);
       return encodeArgs<CstringIdx + 1>(cstringSize, out + cstringSize[CstringIdx],
                                         std::forward<Args>(args)...);
     }
     else if constexpr (isString<Arg>()) {
+      // For C++ string, just memcpy
       size_t len = arg.size();
       memcpy(out, arg.data(), len);
       out[len] = 0;
@@ -666,21 +591,41 @@ public:
   }
 
 public:
+
+  // The logId is passed by reference!
   template<typename... Args>
   inline void log(
     uint32_t& logId, int64_t tsc, const char* location, LogLevel level,
     fmt::format_string<typename fmtlogdetail::UnrefPtr<fmt::remove_cvref_t<Args>>::type...> format,
     Args&&... args) noexcept {
     if (!logId) {
+      // This logId has not been registered
+      // call unNameFormat to strip out the named arguments in the format string
+      // and register the format(allocate logId)
       auto unnamed_format = unNameFormat<false>(fmt::string_view(format), nullptr, args...);
       registerLogInfo(logId, formatTo<Args...>, location, level, unnamed_format);
     }
+    // compute the size of the logging message
+    // For most of the parts, we can compute the length at compile time
+    // But for Cstrings, we can only peek the length at runtime.
     constexpr size_t num_cstring = fmt::detail::count<isCstring<Args>()...>();
+    // isCstring is a constexpr function which returns a boolean value
+    // And this fmt::detail::count will count the number of c strings
+  
     size_t cstringSizes[std::max(num_cstring, (size_t)1)];
+    // store the size of c-strings inside an array
+
     uint32_t alloc_size = 8 + (uint32_t)getArgSizes<0>(cstringSizes, args...);
+    // 8 is the size of header (logId, tsc).
+    // getArgSizes will recursively compute the size of the message
+    // And we pass the "cstringSizes" array as reference to be filled in
+    // getArgSizes.
+
     bool q_full_cb = true;
+    // push to the spsc queue
     do {
       if (auto header = allocMsg(alloc_size, q_full_cb)) {
+        // push "(logId, tsc, encoded arguments)"
         header->logId = logId;
         char* out = (char*)(header + 1);
         *(int64_t*)out = tsc;
@@ -696,6 +641,7 @@ public:
   template<typename... Args>
   inline void logOnce(const char* location, LogLevel level, fmt::format_string<Args...> format,
                       Args&&... args) {
+    // no register logic here.
     fmt::string_view sv(format);
     auto&& fmt_args = fmt::make_format_args(args...);
     uint32_t fmt_size = formatted_size(sv, fmt_args);
@@ -752,7 +698,10 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept {
 #define __FMTLOG_S1(x) #x
 #define __FMTLOG_S2(x) __FMTLOG_S1(x)
 #define __FMTLOG_LOCATION __FILE__ ":" __FMTLOG_S2(__LINE__)
+// Use __FILE__ and __LINE__ macro to display the file name and the line number
 
+// The logId is a static variable inside the block and it's passed by reference!
+// Therefore only for the first time this macro will trigger registration.
 #define FMTLOG(level, format, ...)                                                                 \
   do {                                                                                             \
     static uint32_t logId = 0;                                                                     \
@@ -760,7 +709,23 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept {
     fmtlogWrapper<>::impl.log(logId, fmtlogWrapper<>::impl.tscns.rdtsc(), __FMTLOG_LOCATION,       \
                               level, format, ##__VA_ARGS__);                                       \
   } while (0)
+  /*
+  Using "do while(0)" here is pretty smart. It prevents mis-usage of this macro
+  I.e. if we don't implement this macro using "do while(0)", then it's like
+       static uint32_t logId = 0;
+       if(fmtlog::checkLogLevel(level)) {
+         fmtlogWrapper<>impl.log(logId, fmtlogWrapper<>::impl.tscns.rdtsc(), __FMTLOG_LOCATION,
+           level, format, ##__VAR_ARGS__);
+       }
+  Then if the user use it like  
+    if (condition)
+      FMTLOG(.....);
+    else
+      ....
+  It will lead to wrong semantics.
+  */
 
+// limiting the frequency
 #define FMTLOG_LIMIT(min_interval, level, format, ...)                                             \
   do {                                                                                             \
     static uint32_t logId = 0;                                                                     \
@@ -773,12 +738,19 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept {
     fmtlogWrapper<>::impl.log(logId, tsc, __FMTLOG_LOCATION, level, format, ##__VA_ARGS__);        \
   } while (0)
 
+
+// Here's the logic of eliminating static info encoding optimization
+// when the calling times of some logging statements is small enough
 #define FMTLOG_ONCE(level, format, ...)                                                            \
   do {                                                                                             \
     if (!fmtlog::checkLogLevel(level)) break;                                                      \
     fmtlogWrapper<>::impl.logOnce(__FMTLOG_LOCATION, level, format, ##__VA_ARGS__);                \
   } while (0)
 
+
+
+
+// Define aliases for ease of use
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_DBG
 #define logd(format, ...) FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
 #define logdo(format, ...) FMTLOG_ONCE(fmtlog::DBG, format, ##__VA_ARGS__)

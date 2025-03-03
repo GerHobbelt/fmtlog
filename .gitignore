@@ -1,3 +1,6 @@
+.vscode
 .build
+fmt/
+build/
 out
 CMakeSettings.json

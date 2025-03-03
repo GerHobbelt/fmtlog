@@ -13,6 +13,7 @@ else()
 endif()
 
 link_directories(.)
+include_directories(.)
 include_directories(fmt/include)
 
 add_library(fmtlog-shared SHARED fmtlog.cc)

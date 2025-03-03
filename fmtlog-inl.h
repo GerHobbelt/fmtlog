@@ -38,6 +38,8 @@ SOFTWARE.
 #include <unistd.h>
 #endif
 
+#include <string.hpp>
+
 namespace {
 void fmtlogEmptyFun(void*) {
 }
@@ -47,50 +49,6 @@ template<int ___ = 0>
 class fmtlogDetailT
 {
 public:
-  // https://github.com/MengRao/str
-  template<size_t SIZE>
-  class Str
-  {
-  public:
-    static const int Size = SIZE;
-    char s[SIZE];
-
-    Str() {}
-    Str(const char* p) { *this = *(const Str<SIZE>*)p; }
-
-    char& operator[](int i) { return s[i]; }
-    char operator[](int i) const { return s[i]; }
-
-    template<typename T>
-    void fromi(T num) {
-      if constexpr (Size & 1) {
-        s[Size - 1] = '0' + (num % 10);
-        num /= 10;
-      }
-      switch (Size & -2) {
-        case 18: *(uint16_t*)(s + 16) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 16: *(uint16_t*)(s + 14) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 14: *(uint16_t*)(s + 12) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 12: *(uint16_t*)(s + 10) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 10: *(uint16_t*)(s + 8) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 8: *(uint16_t*)(s + 6) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 6: *(uint16_t*)(s + 4) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 4: *(uint16_t*)(s + 2) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-        case 2: *(uint16_t*)(s + 0) = *(uint16_t*)(digit_pairs + ((num % 100) << 1)); num /= 100;
-      }
-    }
-
-    static constexpr const char* digit_pairs = "00010203040506070809"
-                                               "10111213141516171819"
-                                               "20212223242526272829"
-                                               "30313233343536373839"
-                                               "40414243444546474849"
-                                               "50515253545556575859"
-                                               "60616263646566676869"
-                                               "70717273747576777879"
-                                               "80818283848586878889"
-                                               "90919293949596979899";
-  };
 
   fmtlogDetailT()
     : flushDelay(3000000000) {
@@ -215,6 +173,7 @@ public:
     int argIdx;
   };
 
+  // A thread local ThreadBufferDeztoryer
   static thread_local ThreadBufferDestroyer sbc;
   int64_t midnightNs;
   fmt::string_view headerPattern;
@@ -285,6 +244,10 @@ public:
     monthName = monthNames[timeinfo->tm_mon];
   }
 
+  /**
+   * Preallocating the ThreadBuffer in this thread.
+   * Use thread_id as the default name
+   */
   void preallocate() {
     if (fmtlog::threadBuffer) return;
     fmtlog::threadBuffer = new fmtlog::ThreadBuffer();
@@ -297,6 +260,7 @@ public:
       fmt::format_to_n(fmtlog::threadBuffer->name, sizeof(fmtlog::threadBuffer->name), "{}", tid).size;
     sbc.threadBufferCreated();
 
+    // Use a mutex to protect "threadBuffers", which will be used in logging thread polling
     std::unique_lock<std::mutex> guard(bufferMutex);
     threadBuffers.push_back(fmtlog::threadBuffer);
   }
@@ -492,10 +456,16 @@ struct fmtlogDetailWrapper
 template<int _>
 fmtlogDetailT<> fmtlogDetailWrapper<_>::impl;
 
+/**
+ * @brief Allocate logId, register it to logInfos.
+ * This function is called by working thread. Therefore
+ *  we need to use mutex to protect logInfos,
+ */
 template<int _>
 void fmtlogT<_>::registerLogInfo(uint32_t& logId, FormatToFn fn, const char* location,
                                  LogLevel level, fmt::string_view fmtString) noexcept {
   auto& d = fmtlogDetailWrapper<>::impl;
+  // 
   std::lock_guard<std::mutex> lock(d.logInfoMutex);
   if (logId) return;
   logId = d.logInfos.size() + d.bgLogInfos.size();
