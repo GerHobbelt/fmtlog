@@ -261,7 +261,7 @@ public:
   };
 
   // A thread buffer contains a SPSC Queue for passing logging messages,
-  // a varable indicating this buffer should be deallocated 
+  // a varable indicating this buffer should be deallocated
   // (set by the destructor of ThreadBufferDestroyer),
   // and the name of the thread (set by setThreadName, or using the thread id as default).
   struct ThreadBuffer
@@ -297,7 +297,7 @@ public:
 
   volatile LogLevel currentLogLevel;
 
-  // This threafBuffer is a static thread local variable. 
+  // This threadBuffer is a static thread local variable. 
   // And the ThreadBuffer object will only be allocated by "preallocate"
   // fucntion, or by the first logging message in that thread
   static FAST_THREAD_LOCAL ThreadBuffer* threadBuffer;

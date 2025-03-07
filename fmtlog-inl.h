@@ -135,6 +135,8 @@ public:
   struct StaticLogInfo
   {
     // Constructor
+    // It will store the format-to function! In this way we capture the formatting metadata
+    // It's awesome
     constexpr StaticLogInfo(fmtlog::FormatToFn fn, const char* loc, fmtlog::LogLevel level, fmt::string_view fmtString)
       : formatToFn(fn)
       , formatString(fmtString)
@@ -383,6 +385,7 @@ public:
     }
   }
 
+  // Poll the queues. Maintain a heap to preserve the relative order of log messages
   void poll(bool forceFlush) {
     fmtlogWrapper<>::impl.tscns.calibrate();
     int64_t tsc = fmtlogWrapper<>::impl.tscns.rdtsc();
