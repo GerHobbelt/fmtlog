@@ -374,14 +374,14 @@ class fmtlogDetailT
   template<size_t I, typename T>
   inline void setArg(const T& arg)
   {
-    args[reorderIdx[I]] = fmt::detail::make_arg<fmtlog::Context>(arg);
+    args[reorderIdx[I]] = arg;
   }
 
   template<size_t I, typename T>
   inline void setArgVal(const T& arg)
   {
     fmt::detail::value<fmtlog::Context>& value_ = *(fmt::detail::value<fmtlog::Context>*)&args[reorderIdx[I]];
-    value_ = fmt::detail::arg_mapper<fmtlog::Context>().map(arg);
+    value_ = arg;
   }
 
   void flushLogFile()
@@ -684,7 +684,7 @@ void fmtlogT<_>::setLogFile(const char* filename, bool truncate)
   if (!newFp)
   {
     std::string err = fmt::format("Unable to open file: {}: {}", filename, strerror(errno));
-    fmt::throw_format_error(err.c_str());
+    fmt::report_error(err.c_str());
   }
   setbuf(newFp, nullptr);
   d.fpos = ftell(newFp);

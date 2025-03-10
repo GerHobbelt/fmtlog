@@ -337,8 +337,8 @@ class fmtlogT
   };
 
 #if FMT_USE_NONTYPE_TEMPLATE_ARGS
-  template<typename Arg, size_t N, fmt::detail_exported::fixed_string<char, N> Str>
-  struct unNamedType<fmt::detail::statically_named_arg<Arg, char, N, Str>>
+  template<typename Arg, size_t N, fmt::detail::fixed_string<char, N> Str>
+  struct unNamedType<fmt::detail::static_named_arg<Arg, char, N, Str>>
   {
     using type = Arg;
   };
@@ -347,13 +347,13 @@ class fmtlogT
   template<typename Arg>
   static inline constexpr bool isCstring()
   {
-    return fmt::detail::mapped_type_constant<Arg, Context>::value == fmt::detail::type::cstring_type;
+    return fmt::detail::mapped_type_constant<Arg, char>::value == fmt::detail::type::cstring_type;
   }
 
   template<typename Arg>
   static inline constexpr bool isString()
   {
-    return fmt::detail::mapped_type_constant<Arg, Context>::value == fmt::detail::type::string_type;
+    return fmt::detail::mapped_type_constant<Arg, char>::value == fmt::detail::type::string_type;
   }
 
   template<typename Arg>
@@ -483,11 +483,11 @@ class fmtlogT
       if constexpr (ValueOnly)
       {
         fmt::detail::value<Context>& value_ = *(fmt::detail::value<Context>*)(args + Idx);
-        value_ = fmt::detail::arg_mapper<Context>().map(v);
+        value_ = v;
       }
       else
       {
-        args[Idx] = fmt::detail::make_arg<Context>(v);
+        args[Idx] = v;
       }
       return decodeArgs<ValueOnly, Idx + 1, DestructIdx, Args...>(in + size + 1, args, destruct_args);
     }
@@ -498,22 +498,22 @@ class fmtlogT
         fmt::detail::value<Context>& value_ = *(fmt::detail::value<Context>*)(args + Idx);
         if constexpr (UnrefPtr<ArgType>::value)
         {
-          value_ = fmt::detail::arg_mapper<Context>().map(**(ArgType*)in);
+          value_ = **(ArgType*)in;
         }
         else
         {
-          value_ = fmt::detail::arg_mapper<Context>().map(*(ArgType*)in);
+          value_ = *(ArgType*)in;
         }
       }
       else
       {
         if constexpr (UnrefPtr<ArgType>::value)
         {
-          args[Idx] = fmt::detail::make_arg<Context>(**(ArgType*)in);
+          args[Idx] = **(ArgType*)in;
         }
         else
         {
-          args[Idx] = fmt::detail::make_arg<Context>(*(ArgType*)in);
+          args[Idx] = *(ArgType*)in;
         }
       }
 
@@ -616,7 +616,7 @@ class fmtlogT
       begin = p;
       c = *p++;
       if (!c)
-        fmt::throw_format_error("invalid format string");
+        fmt::report_error("invalid format string");
       if (fmt::detail::is_name_start(c))
       {
         while ((fmt::detail::is_name_start(c = *p) || ('0' <= c && c <= '9')))
@@ -634,7 +634,7 @@ class fmtlogT
           }
         }
         if (id < 0)
-          fmt::throw_format_error("invalid format string");
+          fmt::report_error("invalid format string");
         if constexpr (Reorder)
         {
           reorderIdx[id] = arg_idx++;
