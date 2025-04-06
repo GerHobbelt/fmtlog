@@ -24,7 +24,7 @@ Why:
 
 # What you can use instead?
 
-On Quill's README there are some benchmark results for some log libraries you may want, so I will choose an another o    ne.
+On Quill's README there are some benchmark results for some log libraries you may want, so I will choose an another one.
 
 # fmtlog
 fmtlog is a performant asynchronous header-only logging library using [fmt](https://github.com/fmtlib/fmt) library format.
