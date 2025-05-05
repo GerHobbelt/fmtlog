@@ -35,7 +35,7 @@ static void threadRun(int id) {
     ;
   for (int i = 0; i < 100000; i++)
   {
-    logi("msg : {}, i: {}", id, i);
+    log_info("msg : {}, i: {}", id, i);
     if (i % 1000 == 0)
       std::this_thread::sleep_for(std::chrono::milliseconds(1));
   }

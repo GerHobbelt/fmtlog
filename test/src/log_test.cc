@@ -33,69 +33,69 @@ static void logQFullCB(void* userData) {
 
 int main(void) {
   char randomString[] = "Hello World";
-  logi("A string, pointer, number, and float: '{}', {}, {}, {}", randomString, (void*)&randomString, 512, 3.14159);
+  log_info("A string, pointer, number, and float: '{}', {}, {}, {}", randomString, (void*)&randomString, 512, 3.14159);
 
   int a = 4;
   auto sptr = std::make_shared<int>(5);
   auto uptr = std::make_unique<int>(6);
-  logi("void ptr: {}, ptr: {}, sptr: {}, uptr: {}", (void*)&a, &a, sptr, std::move(uptr));
+  log_info("void ptr: {}, ptr: {}, sptr: {}, uptr: {}", (void*)&a, &a, sptr, std::move(uptr));
   a = 7;
   *sptr = 8;
 
   char strarr[10] = "111";
   char* cstr = strarr;
   std::string str = "aaa";
-  logi("str: {}, pstr: {}, strarr: {}, pstrarr: {}, cstr: {}, pcstr: {}", str, &str, strarr, &strarr, cstr, &cstr);
+  log_info("str: {}, pstr: {}, strarr: {}, pstrarr: {}, cstr: {}, pcstr: {}", str, &str, strarr, &strarr, cstr, &cstr);
   str = "bbb";
   strcpy(cstr, "222");
 
-  // logi(FMT_STRING("This msg will trigger compile error: {:d}"), "I am not a number");
+  // log_info(FMT_STRING("This msg will trigger compile error: {:d}"), "I am not a number");
   // FMT_STRING() above is not needed for c++20
 
-  logd(
+  log_debug(
       "This message wont be logged since it is lower "
       "than the current log level.");
   fmtlog::setLogLevel(fmtlog::DBG);
-  logd("Now debug msg is shown");
+  log_debug("Now debug msg is shown");
 
   fmtlog::poll();
 
   for (int i = 0; i < 3; i++)
   {
-    logio("log once: {}", i);
+    log_info_once("log once: {}", i);
   }
 
   fmtlog::setThreadName("main");
-  logi("Thread name changed");
+  log_info("Thread name changed");
 
   fmtlog::poll();
 
   fmtlog::setHeaderPattern("{YmdHMSF} {s} {l}[{t}] ");
-  logi("Header pattern is changed, full date time info is shown");
+  log_info("Header pattern is changed, full date time info is shown");
 
   fmtlog::poll();
 
   for (int i = 0; i < 10; i++)
   {
-    logil(10, "This msg will be logged at an interval of at least 10 ns: {}.", i);
+    log_info_limit(10, "This msg will be logged at an interval of at least 10 ns: {}.", i);
   }
 
   fmtlog::poll();
 
   fmtlog::setLogCB(logcb, fmtlog::WRN);
-  logw("This msg will be called back");
+  log_warning("This msg will be called back");
 
   fmtlog::setLogFile("/tmp/wow", false);
   for (int i = 0; i < 10; i++)
   {
-    logw("test logfilepos: {}.", i);
+    log_warning("test logfilepos: {}.", i);
   }
 
   fmtlog::setLogQFullCB(logQFullCB, nullptr);
   for (int i = 0; i < 1024; i++)
   {
     std::string str(1000, ' ');
-    logi("log q full cb test: {}", str);
+    log_info("log q full cb test: {}", str);
   }
 
   fmtlog::poll();
@@ -115,7 +115,7 @@ static void runBenchmark() {
   t0 = std::chrono::high_resolution_clock::now();
   for (int i = 0; i < RECORDS; ++i)
   {
-    logi("Simple log message with one parameters, {}", i);
+    log_info("Simple log message with one parameters, {}", i);
   }
   t1 = std::chrono::high_resolution_clock::now();
 

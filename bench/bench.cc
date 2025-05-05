@@ -1,7 +1,7 @@
 //#include <bits/stdc++.h>
 #include <chrono>
 
-#include "../fmtlog.h"
+#include "fmtlog/fmtlog.h"
 #include "spdlog/spdlog.h"
 #include "spdlog/sinks/basic_file_sink.h"
 #include "spdlog/async.h"
@@ -22,35 +22,35 @@ struct FmtLogBase
 
 struct StaticString : public FmtLogBase
 {
-  inline void log() { logi("Starting backup replica garbage collector thread"); }
+  inline void log() { log_info("Starting backup replica garbage collector thread"); }
 };
 
 struct StringConcat : public FmtLogBase
 {
-  inline void log() { logi("Opened session with coordinator at {}", "basic+udp:host=192.168.1.140,port=12246"); }
+  inline void log() { log_info("Opened session with coordinator at {}", "basic+udp:host=192.168.1.140,port=12246"); }
 };
 
 struct SingleInteger : public FmtLogBase
 {
-  inline void log() { logi("Backup storage speeds (min): {} MB/s read", 181); }
+  inline void log() { log_info("Backup storage speeds (min): {} MB/s read", 181); }
 };
 
 struct TwoIntegers : public FmtLogBase
 {
   inline void log() {
-    logi("buffer has consumed {} bytes of extra storage, current allocation: {} bytes", 1032024, 1016544);
+    log_info("buffer has consumed {} bytes of extra storage, current allocation: {} bytes", 1032024, 1016544);
   }
 };
 
 struct SingleDouble : public FmtLogBase
 {
-  inline void log() { logi("Using tombstone ratio balancer with ratio = {}", 0.400000); }
+  inline void log() { log_info("Using tombstone ratio balancer with ratio = {}", 0.400000); }
 };
 
 struct ComplexFormat : public FmtLogBase
 {
   inline void log() {
-    logi("Initialized InfUdDriver buffers: {} receive buffers ({} MB), {} transmit buffers ({} MB), took {:.1f} ms",
+    log_info("Initialized InfUdDriver buffers: {} receive buffers ({} MB), {} transmit buffers ({} MB), took {:.1f} ms",
          50000, 97, 50, 0, 26.2);
   }
 };

@@ -88,21 +88,21 @@ int main()
   FMTLOG(fmtlog::INF, "The answer is {}.", 42);
 }
 ```
-There're also shortcut macros `logd`, `logi`, `logw` and `loge` defined for logging `DBG`, `INF`, `WRN` and `ERR` msgs respectively:
+There're also shortcut macros `log_debug`, `log_info`, `log_warning` and `log_error` defined for logging `DBG`, `INF`, `WRN` and `ERR` msgs respectively:
 ```c++
-logi("A info msg");
-logd("This msg will not be logged as the default log level is INF");
+log_info("A info msg");
+log_debug("This msg will not be logged as the default log level is INF");
 fmtlog::setLogLevel(fmtlog::DBG);
-logd("Now debug msg is shown");
+log_debug("Now debug msg is shown");
 ```
 Note that fmtlog is asynchronous in nature, msgs are not written into file/console immediately after the log statements: they are simply pushed into a queue. You need to call `fmtlog::poll()` to collect data from log queues, format and write it out:
 ```c++
 fmtlog::setThreadName("aaa");
-logi("Thread name is bbb in this msg");
+log_info("Thread name is bbb in this msg");
 fmtlog::setThreadName("bbb");
 fmtlog::poll();
 fmtlog::setThreadName("ccc");
-logi("Thread name is ccc in this msg");
+log_info("Thread name is ccc in this msg");
 fmtlog::poll();
 fmtlog::setThreadName("ddd");
 
@@ -115,17 +115,17 @@ fmtlog is based on fmtlib, almost all fmtlib features are supported(except for c
 #include "fmt/ranges.h"
 using namespace fmt::literals;
 
-logi("I'd rather be {1} than {0}.", "right", "happy");
-logi("Hello, {name}! The answer is {number}. Goodbye, {name}.", "name"_a = "World", "number"_a = 42);
+log_info("I'd rather be {1} than {0}.", "right", "happy");
+log_info("Hello, {name}! The answer is {number}. Goodbye, {name}.", "name"_a = "World", "number"_a = 42);
 
 std::vector<int> v = {1, 2, 3};
-logi("ranges: {}", v);
+log_info("ranges: {}", v);
 
-logi("std::move can be used for objects with non-trivial destructors: {}", std::move(v));
+log_info("std::move can be used for objects with non-trivial destructors: {}", std::move(v));
 assert(v.size() == 0);
 
 std::tuple<int, char> t = {1, 'a'};
-logi("tuples: {}", fmt::join(t, ", "));
+log_info("tuples: {}", fmt::join(t, ", "));
 
 enum class color {red, green, blue};
 template <> struct fmt::formatter<color>: formatter<string_view> {
@@ -141,19 +141,19 @@ template <> struct fmt::formatter<color>: formatter<string_view> {
     return formatter<string_view>::format(name, ctx);
   }
 };
-logi("user defined type: {:>10}", color::blue);
-logi("{:*^30}", "centered");
-logi("int: {0:d};  hex: {0:#x};  oct: {0:#o};  bin: {0:#b}", 42);
-logi("dynamic precision: {:.{}f}", 3.14, 1);
+log_info("user defined type: {:>10}", color::blue);
+log_info("{:*^30}", "centered");
+log_info("int: {0:d};  hex: {0:#x};  oct: {0:#o};  bin: {0:#b}", 42);
+log_info("dynamic precision: {:.{}f}", 3.14, 1);
 
 // This gives a compile-time error because d is an invalid format specifier for a string.
 // FMT_STRING() is not needed from C++20 onward
-logi(FMT_STRING("{:d}"), "I am not a number");
+log_info(FMT_STRING("{:d}"), "I am not a number");
 ```
 As an asynchronous logging library, fmtlog provides additional support for passing arguments by pointers(which is seldom needed for fmtlib and it only supports void and char pointers). User can pass a pointer of any type as argument to avoid copy overhead if the lifetime of referred object is assured(otherwise the polling thread will refer to a dangling pointer!). For string arg as an example, fmtlog copies string content for type `std::string` by default, but only a pointer for type `std::string*`:
 ```c++
   std::string str = "aaa";
-  logi("str: {}, pstr: {}", str, &str);
+  log_info("str: {}, pstr: {}", str, &str);
   str = "bbb";
   fmtlog::poll();
   // output: str: aaa, pstr: bbb
@@ -163,7 +163,7 @@ In addition to raw pointers, fmtlog supports `std::shared_ptr` and `std::unique_
   int a = 4;
   auto sptr = std::make_shared<int>(5);
   auto uptr = std::make_unique<int>(6);
-  logi("void ptr: {}, ptr: {}, sptr: {}, uptr: {}", (void*)&a, &a, sptr, std::move(uptr));
+  log_info("void ptr: {}, ptr: {}, sptr: {}, uptr: {}", (void*)&a, &a, sptr, std::move(uptr));
   a = 7;
   *sptr = 8;
   fmtlog::poll();
@@ -255,4 +255,4 @@ The other optimization is that static information of a log(such as format string
 
 However, these decoding functions bloat program size with each function consuming around 50 bytes. In addition, the static infomation entry also consumes 50-ish bytes runtime memory for each log statement. Such memory overhead may not be worthwhile for those infrequent and latency insensitive logs(e.g. program initialization info), thus fmtlog provides user with another log macro which disables this optimization: `FMTLOG_ONCE` and of couse shortcuts: `logdo`, `logio`, `logwo`and `logeo`. `FMTLOG_ONCE` will not create a static info table entry, nor add a decoding function: it pushes static info along with formatted msg body onto the queue. Note that passing argument by pointer is not supported by `FMTLOG_ONCE`.
 
-For those who prefer to further optimize memory usage by filtering log at compile time, macro `FMTLOG_ACTIVE_LEVEL` is applied with a default value `FMTLOG_LEVEL_INF`, meaning debug logs will simply be discarded at compile time. Note that `FMTLOG_ACTIVE_LEVEL` only applies to log shortcut macros, e.g. `logi`, but not `FMTLOG`. Similarly, runtime log level filtering can be disabled by defining macro `FMTLOG_NO_CHECK_LEVEL`, which will increase performance and reduce generated code size a bit.
+For those who prefer to further optimize memory usage by filtering log at compile time, macro `FMTLOG_ACTIVE_LEVEL` is applied with a default value `FMTLOG_LEVEL_INF`, meaning debug logs will simply be discarded at compile time. Note that `FMTLOG_ACTIVE_LEVEL` only applies to log shortcut macros, e.g. `log_info`, but not `FMTLOG`. Similarly, runtime log level filtering can be disabled by defining macro `FMTLOG_NO_CHECK_LEVEL`, which will increase performance and reduce generated code size a bit.
