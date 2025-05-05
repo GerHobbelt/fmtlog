@@ -51,7 +51,7 @@ struct fmt::formatter<MovableType> : formatter<int>
 {
   // parse is inherited from formatter<string_view>.
   // template<typename FormatContext>
-  auto format(const MovableType& val, format_context& ctx) const {
+  auto format(const MovableType& val, format_context& ctx) const
   {
     return formatter<int>::format(val.val[0].v, ctx);
   }

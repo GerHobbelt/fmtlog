@@ -346,7 +346,7 @@ class fmtlogT
 
   static typename SPSCVarQueueOPT::MsgHeader* allocMsg(uint32_t size, bool logQFullCB) noexcept;
 
-  TSCNS<> tscns;
+  tscns::TSCNS<> tscns;
 
   volatile LogLevel currentLogLevel;
 

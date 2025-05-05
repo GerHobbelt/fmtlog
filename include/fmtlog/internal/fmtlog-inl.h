@@ -30,7 +30,7 @@ SOFTWARE
 #include <thread>
 #include <iostream>
 
-#include "fmtlog/fmtlog.h"
+#include <fmtlog/fmtlog.h>
 
 #ifdef _WIN32
 #ifndef NOMINMAX
@@ -45,7 +45,7 @@ SOFTWARE
 #include <sys/syscall.h>
 #endif
 
-#include <string.hpp>
+#include <fmtlog/string.hpp>
 
 namespace
 {
@@ -548,9 +548,8 @@ class fmtlogDetailT
   // Poll the queues. Maintain a heap to preserve the relative order of log messages
   void poll(bool forceFlush)
   {
-    if (fmtlogWrapper<>::impl.tscns.calibrate()) {
-      resetDate();
-    }
+    fmtlogWrapper<>::impl.tscns.calibrate();
+    resetDate();
     int64_t tsc = fmtlogWrapper<>::impl.tscns.rdtsc();
     if (logInfos.size())
     {
