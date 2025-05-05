@@ -35,6 +35,7 @@ SOFTWARE.
 #include <thread>
 #include <vector>
 #include <type_traits>
+#include <tscns.hpp>
 
 #ifdef _MSC_VER
 #include <intrin.h>
@@ -73,12 +74,18 @@ SOFTWARE.
 
 namespace fmtlogdetail
 {
+// These meta-functions are for the optimization
+// which avoids copying and allows passing pointer to object
+// And UnrefPtr will extract the object type
   template<typename Arg>
   struct UnrefPtr : std::false_type
   {
     using type = Arg;
   };
 
+// If the pointer is char * or void *
+// We don't view them as passing pointer to object
+// Therefore return false
   template<>
   struct UnrefPtr<char*> : std::false_type
   {
@@ -91,6 +98,7 @@ namespace fmtlogdetail
     using type = void*;
   };
 
+// In these cases, extract the object type
   template<typename Arg>
   struct UnrefPtr<std::shared_ptr<Arg>> : std::true_type
   {
@@ -111,6 +119,20 @@ namespace fmtlogdetail
 
 };  // namespace fmtlogdetail
 
+/** 
+* @brief Multi-threading async logging class.
+
+  In real world, we care about the latency in working threads, and we don't want logging to lag the
+  working thread. Therefore the solution here is, we start a logging thread for disk writing. And we 
+  create a SPSCQueue to pass the logging messages for each thread.
+  (SPSC ensures no producer contention, avoiding blocking the working threads)
+  And the logging thread will poll these Queues periodically, taking out the logging messages, re-structure them
+  and write them to disk.
+  Moreover, it can be noticed that the format string of a logging statement can be determined during compile-time.
+  And we just need to push the value of the variables into the queue at runtime. Without dealing with too much at compile
+  time, here we choose to send the format string information(i.e. the metadata) at initialization time 
+  (the first time this logging statement is encountered).
+*/
 template<int __ = 0>
 class fmtlogT
 {
@@ -284,6 +306,10 @@ class fmtlogT
     alignas(128) uint32_t read_idx = 0;
   };
 
+  // A thread buffer contains a SPSC Queue for passing logging messages,
+  // a varable indicating this buffer should be deallocated
+  // (set by the destructor of ThreadBufferDestroyer),
+  // and the name of the thread (set by setThreadName, or using the thread id as default).
   struct ThreadBuffer
   {
     SPSCVarQueueOPT varq;
@@ -293,6 +319,7 @@ class fmtlogT
   };
 
   using TSCNS = FMTLOG_TSCNS;
+
 
   void init() {
     tscns.init();
@@ -319,9 +346,13 @@ class fmtlogT
 
   static typename SPSCVarQueueOPT::MsgHeader* allocMsg(uint32_t size, bool logQFullCB) noexcept;
 
-  TSCNS tscns;
+  TSCNS<> tscns;
 
   volatile LogLevel currentLogLevel;
+
+  // This threadBuffer is a static thread local variable. 
+  // And the ThreadBuffer object will only be allocated by "preallocate"
+  // fucntion, or by the first logging message in that thread
   static FAST_THREAD_LOCAL ThreadBuffer* threadBuffer;
 
   template<typename Arg>
@@ -375,12 +406,17 @@ class fmtlogT
     return !std::is_trivially_destructible<ArgType>::value;
   }
 
+  // Recursively compute the size of the arguments
   template<size_t CstringIdx>
   static inline constexpr size_t getArgSizes(size_t* cstringSize)
   {
     return 0;
   }
 
+  // Initially CstringIdx is 0. And it will increment each time we 
+  // encounter a Cstring. This template parameter will be used to index the
+  // cstringSize array. (Actually it's the same to write it as a constexpr 
+  // function parameter)
   template<size_t CstringIdx, typename Arg, typename... Args>
   static inline constexpr size_t getArgSizes(size_t* cstringSize, const Arg& arg, const Args&... args)
   {
@@ -392,6 +428,7 @@ class fmtlogT
     {
       size_t len = strlen(arg) + 1;
       cstringSize[CstringIdx] = len;
+      // We should store the length of the c-strings because strlen is expensive
       return len + getArgSizes<CstringIdx + 1>(cstringSize, args...);
     }
     else if constexpr (isString<Arg>())
@@ -411,6 +448,7 @@ class fmtlogT
     return out;
   }
 
+  // encode the arguments recursively
   template<size_t CstringIdx, typename Arg, typename... Args>
   static inline constexpr char* encodeArgs(size_t* cstringSize, char* out, Arg&& arg, Args&&... args)
   {
@@ -420,6 +458,7 @@ class fmtlogT
     }
     else if constexpr (isCstring<Arg>())
     {
+      // We use cstringSize array here (avoiding re-computing strlen)
       memcpy(out, arg, cstringSize[CstringIdx]);
       return encodeArgs<CstringIdx + 1>(cstringSize, out + cstringSize[CstringIdx], std::forward<Args>(args)...);
     }
@@ -665,6 +704,8 @@ class fmtlogT
   }
 
  public:
+
+  // The logId is passed by reference!
   template<typename... Args>
   inline void log(
       uint32_t& logId,
@@ -677,13 +718,28 @@ class fmtlogT
     if (!logId)
     {
       fmt::string_view format_str_v = format.get();
+      // and register the format(allocate logId)
       auto unnamed_format = unNameFormat<false>(std::string{ format_str_v.begin(), format_str_v.end() }, nullptr, args...);
       registerLogInfo(logId, formatTo<Args...>, location, level, unnamed_format);
     }
+    // compute the size of the logging message
+    // For most of the parts, we can compute the length at compile time
+    // But for Cstrings, we can only peek the length at runtime.
     constexpr size_t num_cstring = fmt::detail::count<isCstring<Args>()...>();
+    // isCstring is a constexpr function which returns a boolean value
+    // And this fmt::detail::count will count the number of c strings
+  
     size_t cstringSizes[std::max(num_cstring, (size_t)1)];
+    // store the size of c-strings inside an array
+
     uint32_t alloc_size = 8 + (uint32_t)getArgSizes<0>(cstringSizes, args...);
+    // 8 is the size of header (logId, tsc).
+    // getArgSizes will recursively compute the size of the message
+    // And we pass the "cstringSizes" array as reference to be filled in
+    // getArgSizes.
+
     bool q_full_cb = true;
+    // push to the spsc queue
     do
     {
       if (auto header = allocMsg(alloc_size, q_full_cb))
@@ -703,7 +759,6 @@ class fmtlogT
   template<typename... Args>
   inline void logOnce(const char* location, LogLevel level, fmt::format_string<Args...> format, Args&&... args)
   {
-
     logOnceV(location, level, format, fmt::make_format_args(std::forward<Args>(args)...));
   }
 
@@ -780,7 +835,10 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
 #define __FMTLOG_S1(x)    #x
 #define __FMTLOG_S2(x)    __FMTLOG_S1(x)
 #define __FMTLOG_LOCATION __FILE__ ":" __FMTLOG_S2(__LINE__)
+// Use __FILE__ and __LINE__ macro to display the file name and the line number
 
+// The logId is a static variable inside the block and it's passed by reference!
+// Therefore only for the first time this macro will trigger registration.
 #define FMTLOG(level, format, ...)                                                                                          \
   do                                                                                                                        \
   {                                                                                                                         \
@@ -789,7 +847,23 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
       break;                                                                                                                \
     fmtlogWrapper<>::impl.log(logId, fmtlogWrapper<>::impl.tscns.rdtsc(), __FMTLOG_LOCATION, level, format, ##__VA_ARGS__); \
   } while (0)
+  /*
+  Using "do while(0)" here is pretty smart. It prevents mis-usage of this macro
+  I.e. if we don't implement this macro using "do while(0)", then it's like
+       static uint32_t logId = 0;
+       if(fmtlog::checkLogLevel(level)) {
+         fmtlogWrapper<>impl.log(logId, fmtlogWrapper<>::impl.tscns.rdtsc(), __FMTLOG_LOCATION,
+           level, format, ##__VAR_ARGS__);
+       }
+  Then if the user use it like  
+    if (condition)
+      FMTLOG(.....);
+    else
+      ....
+  It will lead to wrong semantics.
+  */
 
+// limiting the frequency
 #define FMTLOG_LIMIT(min_interval, level, format, ...)                                      \
   do                                                                                        \
   {                                                                                         \
@@ -823,6 +897,9 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
 #define FMTLOG_ONCE(level, format, ...)                                                            \
     FMTLOG_ONCE_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
 
+
+// Here's the logic of eliminating static info encoding optimization
+// when the calling times of some logging statements is small enough
 #define FMTLOG_ONCE_PRINTF_LOCATION(level, location, format, ...)                                         \
   do {                                                                                             \
     if (!fmtlog::checkLogLevel(level))                                              \
@@ -830,9 +907,11 @@ inline bool fmtlogT<_>::checkLogLevel(LogLevel logLevel) noexcept
     fmtlogWrapper<>::impl.logOncePrintf(location, level, format, ##__VA_ARGS__);          \
   } while (0)
 
+
 #define FMTLOG_ONCE_PRINTF(level, format, ...)                                                            \
     FMTLOG_ONCE_PRINTF_LOCATION(level, __FMTLOG_LOCATION, format, ##__VA_ARGS__);
 
+// Define aliases for ease of use
 #if FMTLOG_ACTIVE_LEVEL <= FMTLOG_LEVEL_DBG
 #define log_debug(format, ...) FMTLOG(fmtlog::DBG, format, ##__VA_ARGS__)
 #define log_debug_once(format, ...) FMTLOG_ONCE(fmtlog::DBG, format, ##__VA_ARGS__)

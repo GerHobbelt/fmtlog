@@ -45,6 +45,8 @@ SOFTWARE
 #include <sys/syscall.h>
 #endif
 
+#include <string.hpp>
+
 namespace
 {
   void fmtlogEmptyFun(void*)
@@ -232,6 +234,8 @@ class fmtlogDetailT
   struct StaticLogInfo
   {
     // Constructor
+    // It will store the format-to function! In this way we capture the formatting metadata
+    // It's awesome
     StaticLogInfo(fmtlog::FormatToFn fn, const char* loc, fmtlog::LogLevel level, std::string fmtString)
         : formatToFn(fn),
           formatString(fmtString),
@@ -282,6 +286,7 @@ class fmtlogDetailT
     int argIdx;
   };
 
+  // A thread local ThreadBufferDeztoryer
   static thread_local ThreadBufferDestroyer sbc;
   int64_t midnightNs;
   std::string headerPattern;
@@ -354,6 +359,10 @@ class fmtlogDetailT
     monthName = monthNames[timeinfo->tm_mon];
   }
 
+  /**
+   * Preallocating the ThreadBuffer in this thread.
+   * Use thread_id as the default name
+   */
   void preallocate()
   {
     if (fmtlog::threadBuffer)
@@ -368,6 +377,7 @@ class fmtlogDetailT
         fmt::format_to_n(fmtlog::threadBuffer->name, sizeof(fmtlog::threadBuffer->name), "{}", tid).size;
     sbc.threadBufferCreated();
 
+    // Use a mutex to protect "threadBuffers", which will be used in logging thread polling
     std::unique_lock<std::mutex> guard(bufferMutex);
     threadBuffers.push_back(fmtlog::threadBuffer);
   }
@@ -535,6 +545,7 @@ class fmtlogDetailT
     }
   }
 
+  // Poll the queues. Maintain a heap to preserve the relative order of log messages
   void poll(bool forceFlush)
   {
     if (fmtlogWrapper<>::impl.tscns.calibrate()) {
@@ -629,6 +640,11 @@ struct fmtlogDetailWrapper
 template<int _>
 fmtlogDetailT<> fmtlogDetailWrapper<_>::impl;
 
+/**
+ * @brief Allocate logId, register it to logInfos.
+ * This function is called by working thread. Therefore
+ *  we need to use mutex to protect logInfos,
+ */
 template<int _>
 void fmtlogT<_>::registerLogInfo(
     uint32_t& logId,
@@ -638,6 +654,7 @@ void fmtlogT<_>::registerLogInfo(
     std::string fmtString) noexcept
 {
   auto& d = fmtlogDetailWrapper<>::impl;
+  // 
   std::lock_guard<std::mutex> lock(d.logInfoMutex);
   if (logId)
     return;
